@@ -10,16 +10,15 @@
 
 const { DefaultAzureCredential } = require('@azure/identity');
 const { LogsQueryClient, LogsQueryResultStatus } = require('@azure/monitor-query');
-const { BlobServiceClient } = require('@azure/storage-blob');
 const { getDB } = require('../config/db');
 const logger = require('../utils/logger');
 const { ingestIncidentDocument } = require('./incidentIngest');
 const { categorizeIncident } = require('./issueCategory');
+const { readCheckpoint, writeCheckpoint } = require('./checkpointStore');
+const { discoverMonitoredContainerApps } = require('./monitoredServices');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const LOG_WORKSPACE_ID  = process.env.LOG_WORKSPACE_ID;
-const CONTAINER_APPS    = (process.env.CONTAINER_APP_NAMES || '')
-  .split(',').map(s => s.trim()).filter(Boolean);
 // Deliberately no fallback to MONGO_COLLECTION (the production collection) — this
 // must be set explicitly, both during testing (service_error_logs_azure) and at
 // cutover (service_error_logs), so a missing env var fails loud instead of silently
@@ -29,10 +28,6 @@ const MONGO_COLLECTION = process.env.MONGO_COLLECTION_APP_LOG;
 const POLL_INTERVAL_MS       = Number(process.env.APP_LOG_POLL_INTERVAL_MS || 60_000);
 const CHECKPOINT_LOOKBACK_MS = Number(process.env.APP_LOG_CHECKPOINT_LOOKBACK_MS || 15 * 60_000);
 
-const CHECKPOINT_CONNECTION = process.env.CHECKPOINT_STORAGE_CONNECTION_STRING;
-const CHECKPOINT_CONTAINER  = process.env.APP_LOG_CHECKPOINT_CONTAINER || 'application-log-poller-checkpoints';
-const CHECKPOINT_BLOB       = process.env.APP_LOG_CHECKPOINT_BLOB || 'checkpoint.json';
-
 const SOURCE_NAME = 'application-log-poller';
 
 let logsClient = null;
@@ -41,43 +36,11 @@ function getLogsClient() {
   return logsClient;
 }
 
-// ── Blob Storage checkpoint ───────────────────────────────────────────────────
-function getBlobClient() {
-  const service   = BlobServiceClient.fromConnectionString(CHECKPOINT_CONNECTION);
-  const container = service.getContainerClient(CHECKPOINT_CONTAINER);
-  return container.getBlockBlobClient(CHECKPOINT_BLOB);
-}
-
-async function readCheckpoint() {
-  try {
-    const blobClient = getBlobClient();
-    const download    = await blobClient.download();
-    const chunks = [];
-    for await (const chunk of download.readableStreamBody) chunks.push(chunk);
-    const parsed = JSON.parse(Buffer.concat(chunks).toString());
-    logger.info(`${SOURCE_NAME}: checkpoint read — ${parsed.lastProcessedTime}`);
-    return parsed.lastProcessedTime;
-  } catch {
-    const fallback = new Date(Date.now() - CHECKPOINT_LOOKBACK_MS).toISOString();
-    logger.info(`${SOURCE_NAME}: no checkpoint, defaulting to ${fallback}`);
-    return fallback;
-  }
-}
-
-async function writeCheckpoint(timestamp) {
-  const blobClient = getBlobClient();
-  await blobClient.uploadData(
-    Buffer.from(JSON.stringify({ lastProcessedTime: timestamp })),
-    { overwrite: true }
-  );
-  logger.info(`${SOURCE_NAME}: checkpoint updated — ${timestamp}`);
-}
-
 // ── Log Analytics query ───────────────────────────────────────────────────────
-function buildQuery(lastProcessedTime) {
-  const appFilter = CONTAINER_APPS.length === 1
-    ? `| where ContainerAppName_s == "${CONTAINER_APPS[0]}"`
-    : `| where ContainerAppName_s in (${CONTAINER_APPS.map(n => `"${n}"`).join(', ')})`;
+function buildQuery(lastProcessedTime, containerApps) {
+  const appFilter = containerApps.length === 1
+    ? `| where ContainerAppName_s == "${containerApps[0]}"`
+    : `| where ContainerAppName_s in (${containerApps.map(n => `"${n}"`).join(', ')})`;
 
   return `
     ContainerAppConsoleLogs_CL
@@ -103,14 +66,16 @@ function parseLogLine(raw) {
 }
 
 async function queryErrorLogs(lastProcessedTime) {
-  if (CONTAINER_APPS.length === 0) {
-    throw new Error('CONTAINER_APP_NAMES is not configured');
+  const containerApps = await discoverMonitoredContainerApps();
+  if (containerApps.length === 0) {
+    logger.warn(`${SOURCE_NAME}: no monitored container apps resolved — skipping this poll cycle`);
+    return [];
   }
 
   const client = getLogsClient();
   const result = await client.queryWorkspace(
     LOG_WORKSPACE_ID,
-    buildQuery(lastProcessedTime),
+    buildQuery(lastProcessedTime, containerApps),
     { duration: 'P1D' } // timespan is required by the SDK; the KQL `where` clause is the real filter
   );
 
@@ -250,7 +215,7 @@ function mapToIncidentDocument(entry) {
 // ── Poll cycle ────────────────────────────────────────────────────────────────
 async function poll() {
   try {
-    const lastProcessedTime = await readCheckpoint();
+    const lastProcessedTime = await readCheckpoint(SOURCE_NAME, CHECKPOINT_LOOKBACK_MS);
     logger.info(`${SOURCE_NAME}: poll cycle started (checkpoint: ${lastProcessedTime})`);
 
     const entries = await queryErrorLogs(lastProcessedTime);
@@ -293,20 +258,13 @@ async function poll() {
 
     const latest = new Date(newEntries[newEntries.length - 1].time);
     latest.setMilliseconds(latest.getMilliseconds() + 1);
-    await writeCheckpoint(latest.toISOString());
+    await writeCheckpoint(SOURCE_NAME, latest.toISOString());
   } catch (err) {
     logger.error(`${SOURCE_NAME}: poll error — ${err.message}`);
   }
 }
 
 // ── Startup ───────────────────────────────────────────────────────────────────
-async function ensureContainer() {
-  const service   = BlobServiceClient.fromConnectionString(CHECKPOINT_CONNECTION);
-  const container = service.getContainerClient(CHECKPOINT_CONTAINER);
-  await container.createIfNotExists();
-  logger.info(`${SOURCE_NAME}: checkpoint container '${CHECKPOINT_CONTAINER}' ready`);
-}
-
 async function ensureIndexes() {
   try {
     const db  = await getDB();
@@ -329,21 +287,13 @@ function start() {
     logger.warn(`${SOURCE_NAME}: LOG_WORKSPACE_ID not set — poller disabled`);
     return;
   }
-  if (CONTAINER_APPS.length === 0) {
-    logger.warn(`${SOURCE_NAME}: CONTAINER_APP_NAMES not set — poller disabled`);
-    return;
-  }
-  if (!CHECKPOINT_CONNECTION) {
-    logger.warn(`${SOURCE_NAME}: CHECKPOINT_STORAGE_CONNECTION_STRING not set — poller disabled`);
-    return;
-  }
   if (!MONGO_COLLECTION) {
     logger.warn(`${SOURCE_NAME}: MONGO_COLLECTION_APP_LOG not set — refusing to start (will not fall back to the production collection)`);
     return;
   }
 
   logger.info(`${SOURCE_NAME} starting (workspace=${LOG_WORKSPACE_ID}, collection=${MONGO_COLLECTION})...`);
-  Promise.all([ensureContainer(), ensureIndexes()])
+  ensureIndexes()
     .then(() => { poll(); setInterval(poll, POLL_INTERVAL_MS); })
     .catch(err => logger.error(`${SOURCE_NAME}: failed to start — ${err.message}`));
 }
