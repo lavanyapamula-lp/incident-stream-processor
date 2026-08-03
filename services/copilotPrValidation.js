@@ -2,7 +2,8 @@ const axios = require('axios');
 const { getDB } = require('../config/db');
 const { extractIncidentMongoId } = require('./incidentStatusUpdate');
 
-const COPILOT_BRANCH_RE = /^(copilot\/|fix\/incident-[a-f\d]{24})/i;
+const COPILOT_BRANCH_RE = /^(copilot\/[a-f\d]{24}|fix\/incident-[a-f\d]{24})/i;
+const AGENT_BRANCH_RE = /^(gemini|claude|foundry|copilot)\/[a-f\d]{24}$/i;
 const COPILOT_USER_RE = /copilot/i;
 const LINKED_ISSUE_RE = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b/gi;
 const ISSUE_REF_RE = /#(\d+)\b/g;
@@ -15,7 +16,7 @@ function hasDeliverableChanges(pr) {
 function isLikelyCopilotPr(pr) {
   const user = pr?.user?.login || '';
   const branch = pr?.head?.ref || '';
-  return COPILOT_USER_RE.test(user) || COPILOT_BRANCH_RE.test(branch);
+  return COPILOT_USER_RE.test(user) || COPILOT_BRANCH_RE.test(branch) || AGENT_BRANCH_RE.test(branch);
 }
 
 function extractMongoIdFromTexts(texts) {
@@ -151,6 +152,21 @@ async function findMongoIdFromRecentIssue(repository) {
   return doc?._id ? String(doc._id) : null;
 }
 
+const COPILOT_BOT_USER_RE = /copilot/i;
+const COPILOT_AGENT_FAILURE_RE = /encountered an error|unable to start|ruleset violation/i;
+
+function isCopilotBotUser(login) {
+  return COPILOT_BOT_USER_RE.test(String(login || ''));
+}
+
+/** Copilot posts this when the coding agent cannot start (e.g. ruleset violation). */
+function parseCopilotAgentFailure(commentBody) {
+  const text = String(commentBody || '').trim();
+  if (!text || !COPILOT_AGENT_FAILURE_RE.test(text)) return null;
+  const firstLine = text.split('\n').map((line) => line.trim()).find(Boolean) || text;
+  return firstLine.slice(0, 500);
+}
+
 module.exports = {
   hasDeliverableChanges,
   isLikelyCopilotPr,
@@ -159,4 +175,6 @@ module.exports = {
   findMongoIdFromRecentIssue,
   parseLinkedIssueNumbers,
   extractMongoIdFromTexts,
+  isCopilotBotUser,
+  parseCopilotAgentFailure,
 };

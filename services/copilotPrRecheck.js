@@ -6,6 +6,7 @@ const {
   resolveIncidentMongoId,
 } = require('./copilotPrValidation');
 const { finalizeCopilotBilling } = require('./copilotBilling');
+const { maybeAdvanceCopilotModelQueue } = require('./copilotModelOrchestrator');
 
 const pendingTimers = new Map();
 const recheckAttempts = new Map();
@@ -96,6 +97,7 @@ async function recheckCopilotPr({ mongoId, owner, repo, pullNumber, prUrl, attem
       prUrl: pr.html_url || prUrl,
       reason: 'Copilot PR had no file changes after recheck window',
     });
+    await maybeAdvanceCopilotModelQueue(resolvedMongoId);
     logger.warn(`Copilot PR recheck: PR #${pullNumber} still empty -> FAILED`);
     return { ok: true, outcome: 'FAILED', result };
   } catch (err) {

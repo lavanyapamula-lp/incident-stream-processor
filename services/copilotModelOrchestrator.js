@@ -4,6 +4,7 @@ const logger = require('../utils/logger');
 
 const TERMINAL_STATUSES = new Set(['PR_RAISED', 'FAILED', 'ESCALATED']);
 const QUEUED_STATUS = 'COPILOT_QUEUED';
+const ACTIVE_COPILOT_STATUSES = ['PENDING', 'IN_PROGRESS', 'ISSUE_CREATED'];
 
 function resolveCopilotModelBenchmark(run) {
   const raw = run?.copilotModelBenchmark;
@@ -38,6 +39,23 @@ async function advanceCopilotModelQueue(benchmarkRunId, completedModelId) {
   const copilotModelBenchmark = resolveCopilotModelBenchmark(run);
   if (!copilotModelBenchmark?.enabled) {
     return { advanced: false, reason: 'not_multi_model_run' };
+  }
+
+  const activeCopilot = await incidentCol.findOne(
+    {
+      benchmarkRunId: runId,
+      benchmarkCopilotModelId: { $exists: true },
+      healingStatus: { $in: ACTIVE_COPILOT_STATUSES },
+    },
+    { projection: { _id: 1, healingStatus: 1, benchmarkCopilotModel: 1 } },
+  );
+  if (activeCopilot) {
+    return {
+      advanced: false,
+      reason: 'copilot_model_still_active',
+      activeIncidentId: String(activeCopilot._id),
+      activeModel: activeCopilot.benchmarkCopilotModel,
+    };
   }
 
   const completedKey = `copilot:${completedModelId}`;

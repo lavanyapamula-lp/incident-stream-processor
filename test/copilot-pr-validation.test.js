@@ -8,6 +8,8 @@ const {
   isLikelyCopilotPr,
   extractMongoIdFromTexts,
   parseLinkedIssueNumbers,
+  isCopilotBotUser,
+  parseCopilotAgentFailure,
 } = require('../services/copilotPrValidation');
 
 let failed = 0;
@@ -30,12 +32,20 @@ assert(
   'copilot user is recognized'
 );
 assert(
-  isLikelyCopilotPr({ user: { login: 'devuser' }, head: { ref: 'copilot/fix-valueerror' } }) === true,
-  'copilot branch prefix is recognized'
+  isLikelyCopilotPr({ user: { login: 'devuser' }, head: { ref: `copilot/${mongoId}` } }) === true,
+  'copilot/incident-id branch is recognized'
+);
+assert(
+  isLikelyCopilotPr({ user: { login: 'devuser' }, head: { ref: `gemini/${mongoId}` } }) === true,
+  'gemini/incident-id branch is recognized'
+);
+assert(
+  isLikelyCopilotPr({ user: { login: 'devuser' }, head: { ref: 'copilot/fix-valueerror' } }) === false,
+  'legacy descriptive copilot branch is not treated as remediation'
 );
 assert(
   isLikelyCopilotPr({ user: { login: 'devuser' }, head: { ref: `fix/incident-${mongoId}` } }) === true,
-  'incident branch prefix is recognized'
+  'legacy fix/incident branch is still recognized'
 );
 assert(
   isLikelyCopilotPr({ user: { login: 'devuser' }, head: { ref: 'feature/manual-fix' } }) === false,
@@ -57,6 +67,13 @@ assert(linked.length === 1, 'prefers explicit close/fix references over bare iss
 
 const bareRefs = [...parseLinkedIssueNumbers('See issue #48 for context')];
 assert(bareRefs.includes(48), 'parses bare issue references when no close/fix verb is present');
+
+assert(isCopilotBotUser('Copilot') === true, 'Copilot display user is recognized');
+assert(
+  parseCopilotAgentFailure('The agent encountered an error and was unable to start working on this issue') != null,
+  'Copilot agent failure comment is detected'
+);
+assert(parseCopilotAgentFailure('Looks good to me') === null, 'normal comments are ignored');
 
 if (failed > 0) {
   console.error(`\n${failed} test(s) failed`);

@@ -25,7 +25,10 @@ async function publish(doc, config) {
         'Content-Type': 'application/json',
         'x-functions-key': key,
       },
-      timeout: 15000,
+      // Remediation Functions await the full agent run (up to AGENT_TIMEOUT_MS, default
+      // 540000ms) before responding, despite returning 202 — so this must comfortably
+      // exceed that or every dispatch times out client-side even on success.
+      timeout: Number(process.env.FORWARD_TIMEOUT_MS || 600000),
     });
 
     logger.info(`Incident ${doc._id} forwarded — Function responded: ${response.status}`);

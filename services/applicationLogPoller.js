@@ -149,6 +149,12 @@ function isExpectedException(content, exceptionText) {
   const fullText = `${content || ''} ${exceptionText || ''}`;
   if (!fullText.trim()) return false;
 
+  // Spring's built-in 404 for an unmatched route / missing static resource (e.g. a
+  // browser hitting the bare service URL or "/favicon.ico" directly). The stack trace
+  // points into framework code (ResourceHttpRequestHandler, HttpServlet), never
+  // application code, so there's nothing for a remediation agent to fix.
+  if (/NoResourceFoundException/.test(fullText)) return true;
+
   const statusPatterns = [
     /\b(?:status|Status|STATUS)[\s:=]+(\d{3})\b/i,
     /\bStatus\s*Code[\s:=]+(\d{3})\b/i,

@@ -92,6 +92,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Captured once so Resolve-Setting can tell "explicitly passed on the command line" apart from
+# "left at its PowerShell default" — a bare truthiness check on a non-empty default (e.g.
+# $EnableDynatracePoller = "false") would otherwise always win over -UseLocalSettings/.env.
+$script:CliBoundParams = $PSBoundParameters
+
 function Test-CommandExists {
     param([string]$Name)
     return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
@@ -118,10 +123,11 @@ function Import-DotEnvValues {
 function Resolve-Setting {
     param(
         [string]$Name,
+        [string]$ParamName,
         [string]$ParamValue,
         [hashtable]$LocalValues
     )
-    if ($ParamValue) { return $ParamValue }
+    if ($script:CliBoundParams.ContainsKey($ParamName)) { return $ParamValue }
     if ($LocalValues -and $LocalValues.ContainsKey($Name) -and $LocalValues[$Name]) { return $LocalValues[$Name] }
     return $ParamValue
 }
@@ -178,39 +184,39 @@ if ($UseLocalSettings) {
     Write-Host ""
 }
 
-$MongoUri                          = Resolve-Setting -Name "MONGO_URI" -ParamValue $MongoUri -LocalValues $localValues
-$MongoDbName                       = Resolve-Setting -Name "MONGO_DB_NAME" -ParamValue $MongoDbName -LocalValues $localValues
-$MongoCollection                   = Resolve-Setting -Name "MONGO_COLLECTION" -ParamValue $MongoCollection -LocalValues $localValues
-$EnableDynatracePoller              = Resolve-Setting -Name "ENABLE_DYNATRACE_POLLER" -ParamValue $EnableDynatracePoller -LocalValues $localValues
-$DtEnvUrl                          = Resolve-Setting -Name "DT_ENV_URL" -ParamValue $DtEnvUrl -LocalValues $localValues
-$DtClientId                        = Resolve-Setting -Name "DT_CLIENT_ID" -ParamValue $DtClientId -LocalValues $localValues
-$DtClientSecret                    = Resolve-Setting -Name "DT_CLIENT_SECRET" -ParamValue $DtClientSecret -LocalValues $localValues
-$CheckpointStorageConnectionString = Resolve-Setting -Name "CHECKPOINT_STORAGE_CONNECTION_STRING" -ParamValue $CheckpointStorageConnectionString -LocalValues $localValues
-$DynatraceWebhookToken             = Resolve-Setting -Name "DYNATRACE_WEBHOOK_TOKEN" -ParamValue $DynatraceWebhookToken -LocalValues $localValues
-$LogLevel                          = Resolve-Setting -Name "LOG_LEVEL" -ParamValue $LogLevel -LocalValues $localValues
-$GithubWebhookSecret               = Resolve-Setting -Name "GITHUB_WEBHOOK_SECRET" -ParamValue $GithubWebhookSecret -LocalValues $localValues
-$GithubToken                       = Resolve-Setting -Name "GITHUB_TOKEN" -ParamValue $GithubToken -LocalValues $localValues
-$GithubOrg                         = Resolve-Setting -Name "GITHUB_ORG" -ParamValue $GithubOrg -LocalValues $localValues
-$CopilotBillingMode                = Resolve-Setting -Name "COPILOT_BILLING_MODE" -ParamValue $CopilotBillingMode -LocalValues $localValues
-$CopilotBillingUser                = Resolve-Setting -Name "COPILOT_BILLING_USER" -ParamValue $CopilotBillingUser -LocalValues $localValues
-$CopilotBillingAccount             = Resolve-Setting -Name "COPILOT_BILLING_ACCOUNT" -ParamValue $CopilotBillingAccount -LocalValues $localValues
-$CopilotModel                      = Resolve-Setting -Name "COPILOT_MODEL" -ParamValue $CopilotModel -LocalValues $localValues
-$CopilotCreditUsdRate              = Resolve-Setting -Name "COPILOT_CREDIT_USD_RATE" -ParamValue $CopilotCreditUsdRate -LocalValues $localValues
-$InternalApiKey                    = Resolve-Setting -Name "INTERNAL_API_KEY" -ParamValue $InternalApiKey -LocalValues $localValues
-$JiraBaseUrl                       = Resolve-Setting -Name "JIRA_BASE_URL" -ParamValue $JiraBaseUrl -LocalValues $localValues
-$JiraEmail                         = Resolve-Setting -Name "JIRA_EMAIL" -ParamValue $JiraEmail -LocalValues $localValues
-$JiraApiToken                      = Resolve-Setting -Name "JIRA_API_TOKEN" -ParamValue $JiraApiToken -LocalValues $localValues
-$JiraProjectKey                    = Resolve-Setting -Name "JIRA_PROJECT_KEY" -ParamValue $JiraProjectKey -LocalValues $localValues
-$JiraIncidentIssuetypeId           = Resolve-Setting -Name "JIRA_INCIDENT_ISSUETYPE_ID" -ParamValue $JiraIncidentIssuetypeId -LocalValues $localValues
-$JiraServiceNameFieldId            = Resolve-Setting -Name "JIRA_SERVICE_NAME_FIELD_ID" -ParamValue $JiraServiceNameFieldId -LocalValues $localValues
-$JiraServiceDeskId                 = Resolve-Setting -Name "JIRA_SERVICE_DESK_ID" -ParamValue $JiraServiceDeskId -LocalValues $localValues
-$JiraRequestTypeId                 = Resolve-Setting -Name "JIRA_REQUEST_TYPE_ID" -ParamValue $JiraRequestTypeId -LocalValues $localValues
-$PollerServiceNames                = Resolve-Setting -Name "POLLER_SERVICE_NAMES" -ParamValue $PollerServiceNames -LocalValues $localValues
-$LogWorkspaceId                    = Resolve-Setting -Name "LOG_WORKSPACE_ID" -ParamValue $LogWorkspaceId -LocalValues $localValues
-$ContainerAppNames                 = Resolve-Setting -Name "CONTAINER_APP_NAMES" -ParamValue $ContainerAppNames -LocalValues $localValues
-$AppLogCollection                  = Resolve-Setting -Name "MONGO_COLLECTION_APP_LOG" -ParamValue $AppLogCollection -LocalValues $localValues
-$AppLogCheckpointContainer         = Resolve-Setting -Name "APP_LOG_CHECKPOINT_CONTAINER" -ParamValue $AppLogCheckpointContainer -LocalValues $localValues
-$AppLogCheckpointBlob              = Resolve-Setting -Name "APP_LOG_CHECKPOINT_BLOB" -ParamValue $AppLogCheckpointBlob -LocalValues $localValues
+$MongoUri                          = Resolve-Setting -Name "MONGO_URI" -ParamName "MongoUri" -ParamValue $MongoUri -LocalValues $localValues
+$MongoDbName                       = Resolve-Setting -Name "MONGO_DB_NAME" -ParamName "MongoDbName" -ParamValue $MongoDbName -LocalValues $localValues
+$MongoCollection                   = Resolve-Setting -Name "MONGO_COLLECTION" -ParamName "MongoCollection" -ParamValue $MongoCollection -LocalValues $localValues
+$EnableDynatracePoller              = Resolve-Setting -Name "ENABLE_DYNATRACE_POLLER" -ParamName "EnableDynatracePoller" -ParamValue $EnableDynatracePoller -LocalValues $localValues
+$DtEnvUrl                          = Resolve-Setting -Name "DT_ENV_URL" -ParamName "DtEnvUrl" -ParamValue $DtEnvUrl -LocalValues $localValues
+$DtClientId                        = Resolve-Setting -Name "DT_CLIENT_ID" -ParamName "DtClientId" -ParamValue $DtClientId -LocalValues $localValues
+$DtClientSecret                    = Resolve-Setting -Name "DT_CLIENT_SECRET" -ParamName "DtClientSecret" -ParamValue $DtClientSecret -LocalValues $localValues
+$CheckpointStorageConnectionString = Resolve-Setting -Name "CHECKPOINT_STORAGE_CONNECTION_STRING" -ParamName "CheckpointStorageConnectionString" -ParamValue $CheckpointStorageConnectionString -LocalValues $localValues
+$DynatraceWebhookToken             = Resolve-Setting -Name "DYNATRACE_WEBHOOK_TOKEN" -ParamName "DynatraceWebhookToken" -ParamValue $DynatraceWebhookToken -LocalValues $localValues
+$LogLevel                          = Resolve-Setting -Name "LOG_LEVEL" -ParamName "LogLevel" -ParamValue $LogLevel -LocalValues $localValues
+$GithubWebhookSecret               = Resolve-Setting -Name "GITHUB_WEBHOOK_SECRET" -ParamName "GithubWebhookSecret" -ParamValue $GithubWebhookSecret -LocalValues $localValues
+$GithubToken                       = Resolve-Setting -Name "GITHUB_TOKEN" -ParamName "GithubToken" -ParamValue $GithubToken -LocalValues $localValues
+$GithubOrg                         = Resolve-Setting -Name "GITHUB_ORG" -ParamName "GithubOrg" -ParamValue $GithubOrg -LocalValues $localValues
+$CopilotBillingMode                = Resolve-Setting -Name "COPILOT_BILLING_MODE" -ParamName "CopilotBillingMode" -ParamValue $CopilotBillingMode -LocalValues $localValues
+$CopilotBillingUser                = Resolve-Setting -Name "COPILOT_BILLING_USER" -ParamName "CopilotBillingUser" -ParamValue $CopilotBillingUser -LocalValues $localValues
+$CopilotBillingAccount             = Resolve-Setting -Name "COPILOT_BILLING_ACCOUNT" -ParamName "CopilotBillingAccount" -ParamValue $CopilotBillingAccount -LocalValues $localValues
+$CopilotModel                      = Resolve-Setting -Name "COPILOT_MODEL" -ParamName "CopilotModel" -ParamValue $CopilotModel -LocalValues $localValues
+$CopilotCreditUsdRate              = Resolve-Setting -Name "COPILOT_CREDIT_USD_RATE" -ParamName "CopilotCreditUsdRate" -ParamValue $CopilotCreditUsdRate -LocalValues $localValues
+$InternalApiKey                    = Resolve-Setting -Name "INTERNAL_API_KEY" -ParamName "InternalApiKey" -ParamValue $InternalApiKey -LocalValues $localValues
+$JiraBaseUrl                       = Resolve-Setting -Name "JIRA_BASE_URL" -ParamName "JiraBaseUrl" -ParamValue $JiraBaseUrl -LocalValues $localValues
+$JiraEmail                         = Resolve-Setting -Name "JIRA_EMAIL" -ParamName "JiraEmail" -ParamValue $JiraEmail -LocalValues $localValues
+$JiraApiToken                      = Resolve-Setting -Name "JIRA_API_TOKEN" -ParamName "JiraApiToken" -ParamValue $JiraApiToken -LocalValues $localValues
+$JiraProjectKey                    = Resolve-Setting -Name "JIRA_PROJECT_KEY" -ParamName "JiraProjectKey" -ParamValue $JiraProjectKey -LocalValues $localValues
+$JiraIncidentIssuetypeId           = Resolve-Setting -Name "JIRA_INCIDENT_ISSUETYPE_ID" -ParamName "JiraIncidentIssuetypeId" -ParamValue $JiraIncidentIssuetypeId -LocalValues $localValues
+$JiraServiceNameFieldId            = Resolve-Setting -Name "JIRA_SERVICE_NAME_FIELD_ID" -ParamName "JiraServiceNameFieldId" -ParamValue $JiraServiceNameFieldId -LocalValues $localValues
+$JiraServiceDeskId                 = Resolve-Setting -Name "JIRA_SERVICE_DESK_ID" -ParamName "JiraServiceDeskId" -ParamValue $JiraServiceDeskId -LocalValues $localValues
+$JiraRequestTypeId                 = Resolve-Setting -Name "JIRA_REQUEST_TYPE_ID" -ParamName "JiraRequestTypeId" -ParamValue $JiraRequestTypeId -LocalValues $localValues
+$PollerServiceNames                = Resolve-Setting -Name "POLLER_SERVICE_NAMES" -ParamName "PollerServiceNames" -ParamValue $PollerServiceNames -LocalValues $localValues
+$LogWorkspaceId                    = Resolve-Setting -Name "LOG_WORKSPACE_ID" -ParamName "LogWorkspaceId" -ParamValue $LogWorkspaceId -LocalValues $localValues
+$ContainerAppNames                 = Resolve-Setting -Name "CONTAINER_APP_NAMES" -ParamName "ContainerAppNames" -ParamValue $ContainerAppNames -LocalValues $localValues
+$AppLogCollection                  = Resolve-Setting -Name "MONGO_COLLECTION_APP_LOG" -ParamName "AppLogCollection" -ParamValue $AppLogCollection -LocalValues $localValues
+$AppLogCheckpointContainer         = Resolve-Setting -Name "APP_LOG_CHECKPOINT_CONTAINER" -ParamName "AppLogCheckpointContainer" -ParamValue $AppLogCheckpointContainer -LocalValues $localValues
+$AppLogCheckpointBlob              = Resolve-Setting -Name "APP_LOG_CHECKPOINT_BLOB" -ParamName "AppLogCheckpointBlob" -ParamValue $AppLogCheckpointBlob -LocalValues $localValues
 
 if (-not $MongoUri -or $MongoUri -match '^mongodb\+srv://USER') {
     Write-Host "ERROR: -MongoUri is required (missing or still the placeholder value)." -ForegroundColor Red

@@ -1,12 +1,14 @@
 const crypto = require('crypto');
 const express = require('express');
 const logger = require('../utils/logger');
-const { updateIncidentStatus, extractIncidentMongoId } = require('../services/incidentStatusUpdate');
+const { updateIncidentStatus, markCopilotPrFailed, extractIncidentMongoId } = require('../services/incidentStatusUpdate');
 const {
   hasDeliverableChanges,
   isLikelyCopilotPr,
   resolveIncidentMongoId,
   findMongoIdFromRecentIssue,
+  isCopilotBotUser,
+  parseCopilotAgentFailure,
 } = require('../services/copilotPrValidation');
 const {
   cancelScheduledRecheck,
@@ -14,6 +16,7 @@ const {
 } = require('../services/copilotPrRecheck');
 const { logLlmInvocation, estimateTokens } = require('../services/llmInvocationLogger');
 const { finalizeCopilotBilling } = require('../services/copilotBilling');
+const { maybeAdvanceCopilotModelQueue } = require('../services/copilotModelOrchestrator');
 
 const router = express.Router();
 
@@ -68,6 +71,7 @@ async function handlePullRequest(payload) {
     });
 
     await finalizeCopilotBilling(mongoId, { pr, repository, step: 'copilot_ai_credits_session' });
+    await maybeAdvanceCopilotModelQueue(mongoId);
 
     return { handled: true, mongoId, result, action, deliverable: true };
   }
@@ -104,14 +108,21 @@ async function handleIssueCommentCreated(payload) {
   const issue = payload.issue;
   if (!comment || !issue) return { handled: false, reason: 'missing comment or issue' };
 
-  const escalationReason = parseEscalationReason(comment.body);
-  if (!escalationReason) {
-    return { handled: false, reason: 'comment does not start with ESCALATED:' };
-  }
-
   const mongoId = extractIncidentMongoId(issue.body);
   if (!mongoId) {
     return { handled: false, reason: 'issue body missing Incident MongoDB ID' };
+  }
+
+  const copilotFailure = parseCopilotAgentFailure(comment.body);
+  if (copilotFailure && isCopilotBotUser(comment.user?.login)) {
+    const result = await markCopilotPrFailed(mongoId, { reason: copilotFailure });
+    await maybeAdvanceCopilotModelQueue(mongoId);
+    return { handled: true, mongoId, result, copilotFailure: true };
+  }
+
+  const escalationReason = parseEscalationReason(comment.body);
+  if (!escalationReason) {
+    return { handled: false, reason: 'comment is not a Copilot failure or ESCALATED:' };
   }
 
   const result = await updateIncidentStatus(mongoId, {
@@ -119,6 +130,8 @@ async function handleIssueCommentCreated(payload) {
     escalationReason,
     issueUrl: issue.html_url,
   });
+
+  await maybeAdvanceCopilotModelQueue(mongoId);
 
   await logLlmInvocation({
     incidentId: mongoId,
