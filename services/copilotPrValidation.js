@@ -2,7 +2,7 @@ const axios = require('axios');
 const { getDB } = require('../config/db');
 const { extractIncidentMongoId } = require('./incidentStatusUpdate');
 
-const COPILOT_BRANCH_RE = /^(copilot\/[a-f\d]{24}|fix\/incident-[a-f\d]{24})/i;
+const COPILOT_BRANCH_RE = /^(copilot\/|fix\/incident-[a-f\d]{24})/i;
 const AGENT_BRANCH_RE = /^(gemini|claude|foundry|copilot)\/[a-f\d]{24}$/i;
 const COPILOT_USER_RE = /copilot/i;
 const LINKED_ISSUE_RE = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b/gi;

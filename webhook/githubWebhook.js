@@ -68,6 +68,7 @@ async function handlePullRequest(payload) {
       healingStatus: 'PR_RAISED',
       prUrl: pr.html_url,
       prBranch: pr.head?.ref,
+      copilotGeneratedBranch: pr.head?.ref,
     });
 
     await finalizeCopilotBilling(mongoId, { pr, repository, step: 'copilot_ai_credits_session' });

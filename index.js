@@ -14,7 +14,7 @@ async function main() {
   try {
     await connectDB();
     await startChangeStream();
-    //applicationLogPoller.start();
+    applicationLogPoller.start();
 
     // Off by default even when DT_ENV_URL/DT_CLIENT_ID/DT_CLIENT_SECRET are populated —
     // those can be stale leftovers in .env. Set ENABLE_DYNATRACE_POLLER=true to opt back in.

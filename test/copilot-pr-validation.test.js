@@ -40,8 +40,8 @@ assert(
   'gemini/incident-id branch is recognized'
 );
 assert(
-  isLikelyCopilotPr({ user: { login: 'devuser' }, head: { ref: 'copilot/fix-valueerror' } }) === false,
-  'legacy descriptive copilot branch is not treated as remediation'
+  isLikelyCopilotPr({ user: { login: 'devuser' }, head: { ref: 'copilot/fix-valueerror' } }) === true,
+  'copilot-generated descriptive branch is recognized'
 );
 assert(
   isLikelyCopilotPr({ user: { login: 'devuser' }, head: { ref: `fix/incident-${mongoId}` } }) === true,

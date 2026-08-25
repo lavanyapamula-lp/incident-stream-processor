@@ -22,13 +22,17 @@ function parseObjectId(id) {
   return new ObjectId(id);
 }
 
-function buildUpdateFields({ healingStatus, prUrl, prBranch, escalationReason, issueUrl }) {
+function buildUpdateFields({ healingStatus, prUrl, prBranch, copilotGeneratedBranch, escalationReason, issueUrl }) {
   const now = new Date();
   const fields = { healingStatus, statusUpdatedAt: now };
 
   if (healingStatus === 'PR_RAISED') {
     if (prUrl) fields.prUrl = prUrl;
-    if (prBranch) fields.prBranch = prBranch;
+    const generatedBranch = copilotGeneratedBranch || prBranch;
+    if (generatedBranch) {
+      fields.copilotGeneratedBranch = generatedBranch;
+      fields.prBranch = generatedBranch;
+    }
     fields.prCreatedAt = now;
   }
 
